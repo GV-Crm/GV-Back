@@ -10,19 +10,10 @@ import {
   type Asistencia,
 } from '@/lib/asistencias/calendario'
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': 'http://localhost:5173',
-  'Access-Control-Allow-Methods': 'GET,OPTIONS',
-}
-
 const MAX_DIAS = 31
 
 function errorRespuesta(mensaje: string, status: number) {
-  return NextResponse.json({ error: mensaje }, { status, headers: CORS_HEADERS })
-}
-
-export async function OPTIONS() {
-  return new NextResponse(null, { headers: CORS_HEADERS })
+  return NextResponse.json({ error: mensaje }, { status })
 }
 
 export async function GET(req: NextRequest) {
@@ -77,5 +68,5 @@ export async function GET(req: NextRequest) {
     }),
   }))
 
-  return NextResponse.json({ hoy: fechaHoy, desde, hasta, empleados }, { headers: CORS_HEADERS })
+  return NextResponse.json({ hoy: fechaHoy, desde, hasta, empleados })
 }
