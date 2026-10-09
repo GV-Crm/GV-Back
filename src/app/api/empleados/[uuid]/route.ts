@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { autorizar } from '@/lib/supabase/auth'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ uuid: string }> }) {
-  const acceso = await autorizar(req)
+  const acceso = await autorizar(req, 'ver', 'Asistencia')
   if (acceso.respuesta) return acceso.respuesta
 
   const { uuid } = await params
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ uuid
 
 /** Baja (`{ Activo: false }`) o reactivación (`{ Activo: true }`) de un trabajador. */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ uuid: string }> }) {
-  const acceso = await autorizar(req, 'gestionar_empleados')
+  const acceso = await autorizar(req, 'gestionar', 'Empleado')
   if (acceso.respuesta) return acceso.respuesta
 
   const { uuid } = await params

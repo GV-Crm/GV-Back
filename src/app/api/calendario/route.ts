@@ -18,7 +18,7 @@ function errorRespuesta(mensaje: string, status: number) {
 }
 
 export async function GET(req: NextRequest) {
-  const acceso = await autorizar(req)
+  const acceso = await autorizar(req, 'ver', 'Asistencia')
   if (acceso.respuesta) return acceso.respuesta
 
   const params = req.nextUrl.searchParams

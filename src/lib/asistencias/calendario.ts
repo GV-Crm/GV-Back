@@ -23,6 +23,9 @@ export type Asistencia = {
   InicioComida: string | null
   FinComida: string | null
   HoraSalida: string | null
+  /** Solo en faltas justificadas: el motivo y quién lo escribió. */
+  Justificacion?: string | null
+  JustificadoPor?: string | null
 }
 
 export type FaltaNueva = Pick<Asistencia, 'id_empleados' | 'id_estado'> & { Fecha: string }

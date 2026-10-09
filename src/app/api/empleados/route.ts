@@ -1,11 +1,15 @@
 import { NextResponse, type NextRequest} from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { autorizar } from '@/lib/supabase/auth'
+import { autorizar, sinPermiso } from '@/lib/supabase/auth'
 import { esFechaValida } from '@/lib/asistencias/calendario'
 
 export async function GET(req: NextRequest) {
   const acceso = await autorizar(req)
   if (acceso.respuesta) return acceso.respuesta
+  // La lista la usan dos módulos: Asistencias y Trabajadores. Basta con tener acceso a uno.
+  if (acceso.ability.cannot('ver', 'Asistencia') && acceso.ability.cannot('gestionar', 'Empleado')) {
+    return sinPermiso()
+  }
 
   const supabase = await createAdminClient()
 
@@ -22,7 +26,7 @@ export async function GET(req: NextRequest) {
 
 /** Alta de un trabajador. Body: `{ Nombre, Area, Ingreso: 'YYYY-MM-DD' }`. */
 export async function POST(req: NextRequest) {
-  const acceso = await autorizar(req, 'gestionar_empleados')
+  const acceso = await autorizar(req, 'gestionar', 'Empleado')
   if (acceso.respuesta) return acceso.respuesta
 
   const body = await req.json().catch(() => null)

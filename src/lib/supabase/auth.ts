@@ -1,15 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { crearAbility, reglasDelRol, type AppAbility, type Regla } from '@/lib/permisos/ability'
+import type { Accion, Recurso } from '@/lib/permisos/catalogo'
 
-export type Permiso = 'gestionar_empleados' | 'justificar_faltas'
-
-/** Roles de la tabla `Roles` con permisos extra; cualquier otro rol solo puede consultar. */
-const PERMISOS_POR_ROL: Record<string, Permiso[]> = {
-  Admin: ['gestionar_empleados'],
-  'Admin Administracion': ['gestionar_empleados', 'justificar_faltas'],
-}
-
-export type Perfil = { correo: string; nombre: string | null; rol: string; permisos: Permiso[] }
+/** Quién está haciendo la petición. `reglas` es lo que puede hacer (formato CASL). */
+export type Perfil = { correo: string; nombre: string | null; rol: string; reglas: Regla[] }
 
 /** Valida el access token de Supabase que el frontend manda en `Authorization: Bearer <token>`. */
 async function usuarioDeLaPeticion(req: NextRequest) {
@@ -23,6 +18,7 @@ async function usuarioDeLaPeticion(req: NextRequest) {
 // En la tabla los correos se capturan a mano y pueden traer espacios o saltos de línea.
 const normalizarCorreo = (correo: string) => correo.trim().toLowerCase()
 
+/** Busca la cuenta en la tabla Roles por correo y arma su perfil con sus permisos. */
 async function perfilDelCorreo(correo: string): Promise<Perfil | null> {
   const { data, error } = await createAdminClient()
     .from('Roles')
@@ -30,27 +26,43 @@ async function perfilDelCorreo(correo: string): Promise<Perfil | null> {
     .not('Correo', 'is', null)
   if (error) throw new Error(error.message)
 
-  const fila = data.find((r) => normalizarCorreo(r.Correo) === normalizarCorreo(correo))
-  if (!fila) return null
+  const cuenta = data.find((r) => normalizarCorreo(r.Correo) === normalizarCorreo(correo))
+  if (!cuenta) return null
 
-  const rol = fila.Rol.trim()
-  return { correo, nombre: fila.Nombre, rol, permisos: PERMISOS_POR_ROL[rol] ?? [] }
+  const rol = cuenta.Rol.trim()
+  return { correo, nombre: cuenta.Nombre, rol, reglas: await reglasDelRol(rol) }
 }
 
-type Acceso = { perfil: Perfil; respuesta?: never } | { perfil?: never; respuesta: NextResponse }
+export function sinPermiso() {
+  return NextResponse.json({ error: 'Tu rol no tiene permiso para esta acción' }, { status: 403 })
+}
 
-const negar = (mensaje: string, status: number): Acceso => ({
-  respuesta: NextResponse.json({ error: mensaje }, { status }),
-})
+type Acceso =
+  | { perfil: Perfil; ability: AppAbility; respuesta?: never }
+  | { perfil?: never; ability?: never; respuesta: NextResponse }
 
-/** Exige sesión válida y un rol en `Roles`; si se pasa `permiso`, también que el rol lo tenga. */
-export async function autorizar(req: NextRequest, permiso?: Permiso): Promise<Acceso> {
+/**
+ * Revisa quién hace la petición y si tiene permiso. Uso en una ruta:
+ *
+ *   const acceso = await autorizar(req, 'justificar', 'Falta')
+ *   if (acceso.respuesta) return acceso.respuesta   // 401 o 403
+ *
+ * Sin `accion` y `recurso` solo exige sesión válida y un rol asignado.
+ */
+export async function autorizar(req: NextRequest, accion?: Accion, recurso?: Recurso): Promise<Acceso> {
   const usuario = await usuarioDeLaPeticion(req)
-  if (!usuario?.email) return negar('No autorizado', 401)
+  if (!usuario?.email) {
+    return { respuesta: NextResponse.json({ error: 'No autorizado' }, { status: 401 }) }
+  }
 
   const perfil = await perfilDelCorreo(usuario.email)
-  if (!perfil) return negar('Tu usuario no tiene un rol asignado. Pide a un administrador que te dé acceso.', 403)
-  if (permiso && !perfil.permisos.includes(permiso)) return negar('Tu rol no tiene permiso para esta acción', 403)
+  if (!perfil) {
+    const mensaje = 'Tu usuario no tiene un rol asignado. Pide a un administrador que te dé acceso.'
+    return { respuesta: NextResponse.json({ error: mensaje }, { status: 403 }) }
+  }
 
-  return { perfil }
+  const ability = crearAbility(perfil.reglas)
+  if (accion && recurso && ability.cannot(accion, recurso)) return { respuesta: sinPermiso() }
+
+  return { perfil, ability }
 }

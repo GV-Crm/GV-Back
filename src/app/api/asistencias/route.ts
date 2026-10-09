@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { autorizar } from '@/lib/supabase/auth'
 
 export async function GET(req: NextRequest) {
-  const acceso = await autorizar(req)
+  const acceso = await autorizar(req, 'ver', 'Asistencia')
   if (acceso.respuesta) return acceso.respuesta
 
   const supabase = await createAdminClient()

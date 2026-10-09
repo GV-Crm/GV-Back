@@ -16,21 +16,28 @@ function errorRespuesta(mensaje: string, status: number) {
   return NextResponse.json({ error: mensaje }, { status })
 }
 
+const MAX_MOTIVO = 300
+
 /**
  * Marca (o desmarca) como "Falta Justificada" un día sin entrada ni salida.
- * Body: `{ uuid, fecha: 'YYYY-MM-DD', justificada: boolean }`. Si la falta aún no estaba guardada, se crea.
+ * Body: `{ uuid, fecha: 'YYYY-MM-DD', justificada: boolean, motivo?: string }`.
+ * Para justificar, el motivo es obligatorio. Si la falta aún no estaba guardada, se crea.
  */
 export async function POST(req: NextRequest) {
-  const acceso = await autorizar(req, 'justificar_faltas')
+  const acceso = await autorizar(req, 'justificar', 'Falta')
   if (acceso.respuesta) return acceso.respuesta
 
   const body = await req.json().catch(() => null)
   const { uuid, fecha, justificada } = body ?? {}
   if (typeof uuid !== 'string' || typeof fecha !== 'string' || typeof justificada !== 'boolean') {
-    return errorRespuesta('Se espera { uuid, fecha, justificada }', 400)
+    return errorRespuesta('Se espera { uuid, fecha, justificada, motivo }', 400)
   }
   if (!esFechaValida(fecha)) return errorRespuesta('La fecha debe tener formato YYYY-MM-DD', 400)
   if (fecha > hoy()) return errorRespuesta('No se puede justificar un día futuro', 400)
+
+  const motivo = typeof body.motivo === 'string' ? body.motivo.trim() : ''
+  if (justificada && !motivo) return errorRespuesta('Escribe el motivo de la justificación', 400)
+  if (motivo.length > MAX_MOTIVO) return errorRespuesta(`El motivo puede tener máximo ${MAX_MOTIVO} caracteres`, 400)
 
   const supabase = createAdminClient()
 
@@ -55,12 +62,20 @@ export async function POST(req: NextRequest) {
     return errorRespuesta('Ese día tiene registro de entrada o salida, no es una falta', 409)
   }
 
-  const idEstado = justificada ? ID_ESTADO_FALTA_JUSTIFICADA : ID_ESTADO_FALTA
+  // Al quitar la justificación también se borran el motivo y quién la puso.
+  const cambios = justificada
+    ? {
+        id_estado: ID_ESTADO_FALTA_JUSTIFICADA,
+        Justificacion: motivo,
+        JustificadoPor: acceso.perfil.nombre ?? acceso.perfil.correo,
+      }
+    : { id_estado: ID_ESTADO_FALTA, Justificacion: null, JustificadoPor: null }
+
   const resultado =
     delDia.length > 0
-      ? await supabase.from('Asistencias').update({ id_estado: idEstado }).in('id', delDia.map((a) => a.id))
-      : await supabase.from('Asistencias').insert({ id_empleados: empleado.id, Fecha: fecha, id_estado: idEstado })
+      ? await supabase.from('Asistencias').update(cambios).in('id', delDia.map((a) => a.id))
+      : await supabase.from('Asistencias').insert({ id_empleados: empleado.id, Fecha: fecha, ...cambios })
   if (resultado.error) return errorRespuesta(resultado.error.message, 500)
 
-  return NextResponse.json({ fecha, justificada })
+  return NextResponse.json({ fecha, justificada, motivo: justificada ? motivo : null })
 }
