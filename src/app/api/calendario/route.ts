@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { autorizar } from '@/lib/supabase/auth'
 import {
   agruparPorEmpleadoYDia,
   esFechaValida,
@@ -17,6 +18,9 @@ function errorRespuesta(mensaje: string, status: number) {
 }
 
 export async function GET(req: NextRequest) {
+  const acceso = await autorizar(req)
+  if (acceso.respuesta) return acceso.respuesta
+
   const params = req.nextUrl.searchParams
   const fechaHoy = hoy()
   const desde = params.get('desde') ?? fechaHoy
@@ -44,14 +48,17 @@ export async function GET(req: NextRequest) {
   let empleadosQuery = supabase
     .from('Empleados')
     .select('id, Uuid, Nombre, Area, Ingreso')
-    .eq('Activo', true)
     .or(`Ingreso.is.null,Ingreso.lte.${hasta}`)
     .order('Nombre')
-  if (uuid) empleadosQuery = empleadosQuery.eq('Uuid', uuid)
+  // Un empleado concreto se consulta aunque esté inactivo, para poder ver su historial.
+  empleadosQuery = uuid ? empleadosQuery.eq('Uuid', uuid) : empleadosQuery.eq('Activo', true)
 
   const [empleadosRes, asistenciasRes] = await Promise.all([
     empleadosQuery,
-    supabase.from('Asistencias').select('*').or(filtroAsistenciasDelRango(desde, hasta)),
+    supabase
+      .from('Asistencias')
+      .select('*, Estado:EstadosAsistencia(id, Motivo)')
+      .or(filtroAsistenciasDelRango(desde, hasta)),
   ])
 
   if (empleadosRes.error) return errorRespuesta(empleadosRes.error.message, 500)
@@ -64,7 +71,7 @@ export async function GET(req: NextRequest) {
     // Antes de su ingreso el empleado no podía asistir, así que esos días no se evalúan.
     dias: dias.filter((fecha) => !empleado.Ingreso || fecha >= empleado.Ingreso).map((fecha) => {
       const registros = registrosPorEmpleadoYDia.get(`${empleado.id}|${fecha}`) ?? []
-      return { fecha, estado: estadoDelDia(registros), registros }
+      return { fecha, estado: estadoDelDia(registros, fecha, fechaHoy), registros }
     }),
   }))
 

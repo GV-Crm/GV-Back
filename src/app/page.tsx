@@ -29,31 +29,7 @@ export default function Home() {
 
   return (
     <main>
-      <h1>Asistencias</h1>
-
-      {loading && <p>Cargando...</p>}
-      {error && <p role="alert">Error: {error}</p>}
-
-      {!loading && !error && (
-        <table>
-          <thead>
-            <tr>
-              <th>Empleado</th>
-              <th>Hora entrada</th>
-              <th>Hora salida</th>
-            </tr>
-          </thead>
-          <tbody>
-            {asistencias.map((a, i) => (
-              <tr key={i}>
-                <td>{a.Empleado}</td>
-                <td>{a.HoraEntrada}</td>
-                <td>{a.HoraSalida}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <h1>Backend Corriendo ...</h1>
     </main>
   )
 }

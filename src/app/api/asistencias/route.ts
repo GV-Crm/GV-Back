@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { autorizar } from '@/lib/supabase/auth'
 
 export async function GET(req: NextRequest) {
+  const acceso = await autorizar(req)
+  if (acceso.respuesta) return acceso.respuesta
+
   const supabase = await createAdminClient()
 
   let query = supabase.from('Asistencias').select('*').order('HoraEntrada', { ascending: false })

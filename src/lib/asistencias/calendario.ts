@@ -1,9 +1,18 @@
 export const ZONA_HORARIA = 'America/Mexico_City'
 
-/** `EstadosAsistencia.id` de "Falta". */
+/** `EstadosAsistencia.id` de "Falta" y "Falta Justificada". */
 export const ID_ESTADO_FALTA = 3
+export const ID_ESTADO_FALTA_JUSTIFICADA = 4
 
-export type EstadoDia = 'asistio' | 'falta' | 'incompleto'
+/**
+ * - asistio: tiene entrada y salida.
+ * - sin_salida / sin_entrada: solo se registró una de las dos (falta registrar la otra).
+ * - falta: día laboral ya cerrado sin entrada ni salida.
+ * - justificada: falta marcada como "Falta Justificada".
+ * - pendiente: hoy y todavía sin registros.
+ * - descanso: fin de semana sin registros.
+ */
+export type EstadoDia = 'asistio' | 'sin_salida' | 'sin_entrada' | 'falta' | 'justificada' | 'pendiente' | 'descanso'
 
 export type Asistencia = {
   id: number
@@ -45,6 +54,12 @@ export function esFechaValida(fecha: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(fecha) && !Number.isNaN(ms) && new Date(ms).toISOString().startsWith(fecha)
 }
 
+/** De lunes a viernes. Solo estos días pueden generar falta. */
+export function esDiaLaboral(fecha: string): boolean {
+  const diaSemana = new Date(`${fecha}T00:00:00Z`).getUTCDay()
+  return diaSemana >= 1 && diaSemana <= 5
+}
+
 export function rangoDeFechas(desde: string, hasta: string): string[] {
   const dias: string[] = []
   for (let t = Date.parse(desde); t <= Date.parse(hasta); t += UN_DIA_MS) {
@@ -54,22 +69,27 @@ export function rangoDeFechas(desde: string, hasta: string): string[] {
 }
 
 /**
- * Filtro PostgREST (para `.or()`) de las asistencias de un rango de días: los registros con hora de entrada
- * se buscan en una ventana UTC holgada y las faltas generadas, por su `Fecha`.
+ * Filtro PostgREST (para `.or()`) de las asistencias de un rango de días: los registros con hora se buscan en
+ * una ventana UTC holgada (por entrada, o por salida si no hay entrada) y las faltas guardadas, por su `Fecha`.
  */
 export function filtroAsistenciasDelRango(desde: string, hasta: string): string {
   const inicio = new Date(Date.parse(desde) - UN_DIA_MS).toISOString()
   const fin = new Date(Date.parse(hasta) + 2 * UN_DIA_MS).toISOString()
-  return `and(HoraEntrada.gte.${inicio},HoraEntrada.lt.${fin}),and(Fecha.gte.${desde},Fecha.lte.${hasta})`
+  return [
+    `and(HoraEntrada.gte.${inicio},HoraEntrada.lt.${fin})`,
+    `and(HoraEntrada.is.null,HoraSalida.gte.${inicio},HoraSalida.lt.${fin})`,
+    `and(Fecha.gte.${desde},Fecha.lte.${hasta})`,
+  ].join(',')
 }
 
-/** Falta guardada por el sistema: se distingue de un registro capturado porque no tiene hora de entrada. */
+/** Falta guardada (por el sistema o justificada a mano): una fila sin hora de entrada ni de salida. */
 export function esFaltaRegistrada(a: Asistencia): boolean {
-  return a.id_estado === ID_ESTADO_FALTA && !a.HoraEntrada
+  return !a.HoraEntrada && !a.HoraSalida
 }
 
 export function fechaDelRegistro(a: Asistencia): string | null {
-  return a.HoraEntrada ? fechaLocal(a.HoraEntrada) : a.Fecha
+  const hora = a.HoraEntrada ?? a.HoraSalida
+  return hora ? fechaLocal(hora) : a.Fecha
 }
 
 export function agruparPorEmpleadoYDia(asistencias: Asistencia[]): Map<string, Asistencia[]> {
@@ -85,17 +105,21 @@ export function agruparPorEmpleadoYDia(asistencias: Asistencia[]): Map<string, A
   return grupos
 }
 
-function estaCompleta(a: Asistencia): boolean {
-  return Boolean(a.HoraEntrada && a.InicioComida && a.FinComida && a.HoraSalida)
+export function estadoDelDia(registros: Asistencia[], fecha: string, fechaHoy: string): EstadoDia {
+  const conHoras = registros.filter((r) => !esFaltaRegistrada(r))
+  if (conHoras.length === 0) {
+    if (registros.some((r) => r.id_estado === ID_ESTADO_FALTA_JUSTIFICADA)) return 'justificada'
+    if (fecha === fechaHoy) return 'pendiente'
+    return esDiaLaboral(fecha) ? 'falta' : 'descanso'
+  }
+
+  const entrada = conHoras.some((r) => r.HoraEntrada)
+  const salida = conHoras.some((r) => r.HoraSalida)
+  if (entrada && salida) return 'asistio'
+  return entrada ? 'sin_salida' : 'sin_entrada'
 }
 
-export function estadoDelDia(registros: Asistencia[]): EstadoDia {
-  const reales = registros.filter((r) => !esFaltaRegistrada(r))
-  if (reales.length === 0) return 'falta'
-  return reales.some(estaCompleta) ? 'asistio' : 'incompleto'
-}
-
-/** Días sin ningún registro (ni asistencia ni falta ya guardada) desde el ingreso de cada empleado hasta `hasta`. */
+/** Días laborales sin ningún registro (ni asistencia ni falta ya guardada) desde el ingreso de cada empleado hasta `hasta`. */
 export function planificarFaltas(
   empleados: { id: number; Ingreso: string }[],
   asistencias: Asistencia[],
@@ -104,7 +128,7 @@ export function planificarFaltas(
   const grupos = agruparPorEmpleadoYDia(asistencias)
   return empleados.flatMap((empleado) =>
     rangoDeFechas(empleado.Ingreso, hasta)
-      .filter((fecha) => !grupos.has(`${empleado.id}|${fecha}`))
+      .filter((fecha) => esDiaLaboral(fecha) && !grupos.has(`${empleado.id}|${fecha}`))
       .map((fecha) => ({ id_empleados: empleado.id, id_estado: ID_ESTADO_FALTA, Fecha: fecha })),
   )
 }
