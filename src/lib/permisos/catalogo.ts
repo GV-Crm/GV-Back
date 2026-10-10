@@ -33,6 +33,12 @@ export const CATALOGO = [
     descripcion: 'Asignar roles a las cuentas y cambiar lo que puede hacer cada rol',
   },
   {
+    accion: 'gestionar',
+    recurso: 'Checador',
+    modulo: 'Checador',
+    descripcion: 'Ver si el checador está conectado, autorizarlo y ver las marcas que manda',
+  },
+  {
     accion: 'ver',
     recurso: 'Inventario',
     modulo: 'Inventario',
