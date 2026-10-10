@@ -3,8 +3,18 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { crearAbility, reglasDelRol, type AppAbility, type Regla } from '@/lib/permisos/ability'
 import type { Accion, Recurso } from '@/lib/permisos/catalogo'
 
-/** Quién está haciendo la petición. `reglas` es lo que puede hacer (formato CASL). */
-export type Perfil = { correo: string; nombre: string | null; rol: string; reglas: Regla[] }
+/**
+ * Quién está haciendo la petición. `reglas` es lo que puede hacer (formato CASL).
+ * `cuentaId` es el id de su fila en la tabla Roles; `avatar`, la URL de su foto (o null).
+ */
+export type Perfil = {
+  cuentaId: number
+  correo: string
+  nombre: string | null
+  avatar: string | null
+  rol: string
+  reglas: Regla[]
+}
 
 /** Valida el access token de Supabase que el frontend manda en `Authorization: Bearer <token>`. */
 async function usuarioDeLaPeticion(req: NextRequest) {
@@ -22,7 +32,7 @@ const normalizarCorreo = (correo: string) => correo.trim().toLowerCase()
 async function perfilDelCorreo(correo: string): Promise<Perfil | null> {
   const { data, error } = await createAdminClient()
     .from('Roles')
-    .select('Nombre, Rol, Correo')
+    .select('id, Nombre, Rol, Correo, Avatar')
     .not('Correo', 'is', null)
   if (error) throw new Error(error.message)
 
@@ -30,7 +40,14 @@ async function perfilDelCorreo(correo: string): Promise<Perfil | null> {
   if (!cuenta) return null
 
   const rol = cuenta.Rol.trim()
-  return { correo, nombre: cuenta.Nombre, rol, reglas: await reglasDelRol(rol) }
+  return {
+    cuentaId: cuenta.id,
+    correo,
+    nombre: cuenta.Nombre,
+    avatar: cuenta.Avatar,
+    rol,
+    reglas: await reglasDelRol(rol),
+  }
 }
 
 export function sinPermiso() {

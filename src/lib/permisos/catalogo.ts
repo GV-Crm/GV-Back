@@ -27,6 +27,12 @@ export const CATALOGO = [
     descripcion: 'Dar de alta, dar de baja o reactivar trabajadores',
   },
   {
+    accion: 'editar',
+    recurso: 'Empleado',
+    modulo: 'Trabajadores',
+    descripcion: 'Cambiar la foto, el nombre, el área y la fecha de ingreso de los trabajadores',
+  },
+  {
     accion: 'gestionar',
     recurso: 'Permiso',
     modulo: 'Permisos',

@@ -6,7 +6,7 @@ const ORIGENES_PERMITIDOS = (process.env.CORS_ORIGINS ?? 'http://localhost:5173'
   .filter(Boolean)
 
 const CABECERAS_CORS = {
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   Vary: 'Origin',
 }

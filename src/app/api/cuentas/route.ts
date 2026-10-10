@@ -19,13 +19,13 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await createAdminClient()
     .from('Roles')
-    .select('id, Nombre, Correo, Rol')
+    .select('id, Nombre, Correo, Rol, Avatar')
     .not('Correo', 'is', null)
     .order('Nombre')
   if (error) return errorRespuesta(error.message, 500)
 
   const cuentas = data.map((fila) => {
-    const cuenta = { id: fila.id, Nombre: fila.Nombre, Correo: fila.Correo.trim(), Rol: fila.Rol.trim() }
+    const cuenta = { id: fila.id, Nombre: fila.Nombre, Correo: fila.Correo.trim(), Rol: fila.Rol.trim(), Avatar: fila.Avatar }
     return { ...cuenta, bloqueado: motivoParaNoAsignarRol(acceso.perfil, cuenta, cuenta.Rol) }
   })
 
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabase
     .from('Roles')
     .insert({ Nombre: nombre, Correo: correo, Rol: rol })
-    .select('id, Nombre, Correo, Rol')
+    .select('id, Nombre, Correo, Rol, Avatar')
     .single()
   if (error) return errorRespuesta(error.message, 500)
 

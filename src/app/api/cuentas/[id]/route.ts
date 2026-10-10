@@ -35,7 +35,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .from('Roles')
     .update({ Rol: rolNuevo })
     .eq('id', id)
-    .select('id, Nombre, Correo, Rol')
+    .select('id, Nombre, Correo, Rol, Avatar')
     .single()
   if (error) return errorRespuesta(error.message, 500)
 

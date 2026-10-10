@@ -7,7 +7,11 @@ export async function GET(req: NextRequest) {
   const acceso = await autorizar(req)
   if (acceso.respuesta) return acceso.respuesta
   // La lista la usan dos módulos: Asistencias y Trabajadores. Basta con tener acceso a uno.
-  if (acceso.ability.cannot('ver', 'Asistencia') && acceso.ability.cannot('gestionar', 'Empleado')) {
+  const puedeVerLista =
+    acceso.ability.can('ver', 'Asistencia') ||
+    acceso.ability.can('gestionar', 'Empleado') ||
+    acceso.ability.can('editar', 'Empleado')
+  if (!puedeVerLista) {
     return sinPermiso()
   }
 
