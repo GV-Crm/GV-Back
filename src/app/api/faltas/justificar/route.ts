@@ -5,21 +5,25 @@ import {
   esFaltaRegistrada,
   esFechaValida,
   fechaDelRegistro,
-  filtroAsistenciasDelRango,
+  fechaLocal,
   hoy,
   ID_ESTADO_FALTA,
   ID_ESTADO_FALTA_JUSTIFICADA,
-  type Asistencia,
+  type EstadoDia,
 } from '@/lib/asistencias/calendario'
+import { evaluarDia } from '@/lib/asistencias/jornada'
+import { cargarAsistencias, cargarMarcas, cargarVacaciones } from '@/lib/asistencias/registros'
 
 function errorRespuesta(mensaje: string, status: number) {
   return NextResponse.json({ error: mensaje }, { status })
 }
 
 const MAX_MOTIVO = 300
+const ESTADOS_JUSTIFICABLES: EstadoDia[] = ['falta', 'justificada', 'pendiente']
 
 /**
- * Marca (o desmarca) como "Falta Justificada" un día sin entrada ni salida.
+ * Marca (o desmarca) como "Falta Justificada" un día que cuenta como falta: sin registros, o con entrada
+ * después de las 9:00 (ver jornada.ts).
  * Body: `{ uuid, fecha: 'YYYY-MM-DD', justificada: boolean, motivo?: string }`.
  * Para justificar, el motivo es obligatorio. Si la falta aún no estaba guardada, se crea.
  */
@@ -43,38 +47,53 @@ export async function POST(req: NextRequest) {
 
   const { data: empleado, error: errorEmpleado } = await supabase
     .from('Empleados')
-    .select('id, Ingreso')
+    .select('id, Ingreso, PinChecador')
     .eq('Uuid', uuid)
     .maybeSingle()
   if (errorEmpleado) return errorRespuesta(errorEmpleado.message, 500)
   if (!empleado) return errorRespuesta('No existe ese trabajador', 404)
   if (empleado.Ingreso && fecha < empleado.Ingreso) return errorRespuesta('La fecha es anterior a su ingreso', 400)
 
-  const { data, error } = await supabase
-    .from('Asistencias')
-    .select('*')
-    .eq('id_empleados', empleado.id)
-    .or(filtroAsistenciasDelRango(fecha, fecha))
-  if (error) return errorRespuesta(error.message, 500)
+  const [asistencias, marcas, vacaciones] = await Promise.all([
+    cargarAsistencias(fecha, fecha, empleado.id),
+    cargarMarcas(fecha, fecha, [empleado.PinChecador]),
+    cargarVacaciones(fecha, fecha, empleado.id),
+  ])
+  const delDia = asistencias.filter((a) => fechaDelRegistro(a) === fecha)
+  const marcasDelDia = marcas.filter((m) => fechaLocal(m.FechaHora) === fecha).map((m) => m.FechaHora)
 
-  const delDia = (data as Asistencia[]).filter((a) => fechaDelRegistro(a) === fecha)
-  if (delDia.some((a) => !esFaltaRegistrada(a))) {
-    return errorRespuesta('Ese día tiene registro de entrada o salida, no es una falta', 409)
+  // Se puede justificar un día sin registros o uno en el que llegó más de 1 hora tarde (los dos cuentan como falta).
+  const { estado } = evaluarDia(fecha, hoy(), delDia, marcasDelDia, new Date(), vacaciones[0] ?? null)
+  if (estado === 'vacaciones') return errorRespuesta('Ese día está de vacaciones: no es una falta', 409)
+  if (!ESTADOS_JUSTIFICABLES.includes(estado)) {
+    return errorRespuesta('Ese día no es una falta: tiene entrada a tiempo o con retardo', 409)
   }
 
-  // Al quitar la justificación también se borran el motivo y quién la puso.
-  const cambios = justificada
-    ? {
-        id_estado: ID_ESTADO_FALTA_JUSTIFICADA,
-        Justificacion: motivo,
-        JustificadoPor: acceso.perfil.nombre ?? acceso.perfil.correo,
-      }
-    : { id_estado: ID_ESTADO_FALTA, Justificacion: null, JustificadoPor: null }
+  // La justificación es una fila sin horas; las filas con horas (entrada, salida...) no se tocan.
+  const filasDeFalta = delDia.filter(esFaltaRegistrada)
+  const tieneChecadas = delDia.length > filasDeFalta.length || marcasDelDia.length > 0
 
-  const resultado =
-    delDia.length > 0
-      ? await supabase.from('Asistencias').update(cambios).in('id', delDia.map((a) => a.id))
-      : await supabase.from('Asistencias').insert({ id_empleados: empleado.id, Fecha: fecha, ...cambios })
+  let resultado
+  if (justificada) {
+    const cambios = {
+      id_estado: ID_ESTADO_FALTA_JUSTIFICADA,
+      Justificacion: motivo,
+      JustificadoPor: acceso.perfil.nombre ?? acceso.perfil.correo,
+    }
+    resultado =
+      filasDeFalta.length > 0
+        ? await supabase.from('Asistencias').update(cambios).in('id', filasDeFalta.map((a) => a.id))
+        : await supabase.from('Asistencias').insert({ id_empleados: empleado.id, Fecha: fecha, ...cambios })
+  } else if (tieneChecadas) {
+    // Falta por llegar tarde: al quitar la justificación basta con borrarla; la falta se vuelve a calcular sola.
+    resultado = await supabase.from('Asistencias').delete().in('id', filasDeFalta.map((a) => a.id))
+  } else {
+    // Al quitar la justificación también se borran el motivo y quién la puso.
+    resultado = await supabase
+      .from('Asistencias')
+      .update({ id_estado: ID_ESTADO_FALTA, Justificacion: null, JustificadoPor: null })
+      .in('id', filasDeFalta.map((a) => a.id))
+  }
   if (resultado.error) return errorRespuesta(resultado.error.message, 500)
 
   return NextResponse.json({ fecha, justificada, motivo: justificada ? motivo : null })

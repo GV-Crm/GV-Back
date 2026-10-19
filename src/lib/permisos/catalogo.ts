@@ -22,6 +22,12 @@ export const CATALOGO = [
   },
   {
     accion: 'gestionar',
+    recurso: 'Vacaciones',
+    modulo: 'Asistencias',
+    descripcion: 'Registrar y quitar los periodos de vacaciones de los trabajadores',
+  },
+  {
+    accion: 'gestionar',
     recurso: 'Empleado',
     modulo: 'Trabajadores',
     descripcion: 'Dar de alta, dar de baja o reactivar trabajadores',
@@ -49,6 +55,18 @@ export const CATALOGO = [
     recurso: 'Checador',
     modulo: 'Checador',
     descripcion: 'Ver si el checador está conectado, autorizarlo y ver las marcas que manda',
+  },
+  {
+    accion: 'ver',
+    recurso: 'Empresa',
+    modulo: 'Empresa',
+    descripcion: 'Ver los datos de la empresa: razón social, RFC, registro patronal, domicilio fiscal y contacto',
+  },
+  {
+    accion: 'editar',
+    recurso: 'Empresa',
+    modulo: 'Empresa',
+    descripcion: 'Cambiar los datos de la empresa',
   },
   {
     accion: 'ver',

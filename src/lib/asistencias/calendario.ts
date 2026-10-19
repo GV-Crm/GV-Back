@@ -5,14 +5,26 @@ export const ID_ESTADO_FALTA = 3
 export const ID_ESTADO_FALTA_JUSTIFICADA = 4
 
 /**
- * - asistio: tiene entrada y salida.
+ * Las reglas del horario están en jornada.ts.
+ * - asistio: tiene entrada y salida, y llegó a tiempo.
+ * - retardo: tiene entrada y salida, pero llegó más de 15 min tarde.
  * - sin_salida / sin_entrada: solo se registró una de las dos (falta registrar la otra).
- * - falta: día laboral ya cerrado sin entrada ni salida.
+ * - falta: día laboral sin registros, o llegó más de 1 hora tarde.
  * - justificada: falta marcada como "Falta Justificada".
- * - pendiente: hoy y todavía sin registros.
- * - descanso: fin de semana sin registros.
+ * - vacaciones: día laboral dentro de un periodo de vacaciones (tabla Vacaciones), sin checadas.
+ * - pendiente: hoy, todavía sin registros y aún no pasa la hora límite de entrada.
+ * - descanso: día sin jornada (domingo) y sin registros.
  */
-export type EstadoDia = 'asistio' | 'sin_salida' | 'sin_entrada' | 'falta' | 'justificada' | 'pendiente' | 'descanso'
+export type EstadoDia =
+  | 'asistio'
+  | 'retardo'
+  | 'sin_salida'
+  | 'sin_entrada'
+  | 'falta'
+  | 'justificada'
+  | 'vacaciones'
+  | 'pendiente'
+  | 'descanso'
 
 export type Asistencia = {
   id: number
@@ -28,7 +40,27 @@ export type Asistencia = {
   JustificadoPor?: string | null
 }
 
-export type FaltaNueva = Pick<Asistencia, 'id_empleados' | 'id_estado'> & { Fecha: string }
+/**
+ * Solicitud de vacaciones (tabla Vacaciones). `Fechas` son los días exactos, que pueden ser salteados;
+ * `Desde`/`Hasta` son el primero y el último. `Dias` = cuántas fechas tiene.
+ */
+export type PeriodoVacaciones = {
+  id: number
+  id_empleados: number
+  Desde: string
+  Hasta: string
+  Fechas: string[]
+  Dias: number
+  Nota: string | null
+}
+
+/** La solicitud de vacaciones que incluye esa fecha, si hay. */
+export function vacacionesDelDia(periodos: PeriodoVacaciones[], fecha: string): PeriodoVacaciones | null {
+  return periodos.find((p) => p.Fechas.includes(fecha)) ?? null
+}
+
+/** Marca del checador (tabla MarcasChecador). El PIN es el PinChecador del trabajador. */
+export type MarcaChecador = { PIN: string; FechaHora: string }
 
 const formatoFecha = new Intl.DateTimeFormat('en-CA', {
   timeZone: ZONA_HORARIA,
@@ -57,12 +89,6 @@ export function esFechaValida(fecha: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(fecha) && !Number.isNaN(ms) && new Date(ms).toISOString().startsWith(fecha)
 }
 
-/** De lunes a viernes. Solo estos días pueden generar falta. */
-export function esDiaLaboral(fecha: string): boolean {
-  const diaSemana = new Date(`${fecha}T00:00:00Z`).getUTCDay()
-  return diaSemana >= 1 && diaSemana <= 5
-}
-
 export function rangoDeFechas(desde: string, hasta: string): string[] {
   const dias: string[] = []
   for (let t = Date.parse(desde); t <= Date.parse(hasta); t += UN_DIA_MS) {
@@ -71,13 +97,20 @@ export function rangoDeFechas(desde: string, hasta: string): string[] {
   return dias
 }
 
+/** Ventana UTC holgada que cubre por completo los días locales del rango, sea cual sea el desfase horario. */
+export function ventanaUtc(desde: string, hasta: string) {
+  return {
+    inicio: new Date(Date.parse(desde) - UN_DIA_MS).toISOString(),
+    fin: new Date(Date.parse(hasta) + 2 * UN_DIA_MS).toISOString(),
+  }
+}
+
 /**
  * Filtro PostgREST (para `.or()`) de las asistencias de un rango de días: los registros con hora se buscan en
  * una ventana UTC holgada (por entrada, o por salida si no hay entrada) y las faltas guardadas, por su `Fecha`.
  */
 export function filtroAsistenciasDelRango(desde: string, hasta: string): string {
-  const inicio = new Date(Date.parse(desde) - UN_DIA_MS).toISOString()
-  const fin = new Date(Date.parse(hasta) + 2 * UN_DIA_MS).toISOString()
+  const { inicio, fin } = ventanaUtc(desde, hasta)
   return [
     `and(HoraEntrada.gte.${inicio},HoraEntrada.lt.${fin})`,
     `and(HoraEntrada.is.null,HoraSalida.gte.${inicio},HoraSalida.lt.${fin})`,
@@ -108,30 +141,14 @@ export function agruparPorEmpleadoYDia(asistencias: Asistencia[]): Map<string, A
   return grupos
 }
 
-export function estadoDelDia(registros: Asistencia[], fecha: string, fechaHoy: string): EstadoDia {
-  const conHoras = registros.filter((r) => !esFaltaRegistrada(r))
-  if (conHoras.length === 0) {
-    if (registros.some((r) => r.id_estado === ID_ESTADO_FALTA_JUSTIFICADA)) return 'justificada'
-    if (fecha === fechaHoy) return 'pendiente'
-    return esDiaLaboral(fecha) ? 'falta' : 'descanso'
+/** Marcas del checador agrupadas por "PIN|fecha local". */
+export function agruparMarcasPorPinYDia(marcas: MarcaChecador[]): Map<string, string[]> {
+  const grupos = new Map<string, string[]>()
+  for (const marca of marcas) {
+    const clave = `${Number(marca.PIN)}|${fechaLocal(marca.FechaHora)}`
+    const lista = grupos.get(clave) ?? []
+    lista.push(marca.FechaHora)
+    grupos.set(clave, lista)
   }
-
-  const entrada = conHoras.some((r) => r.HoraEntrada)
-  const salida = conHoras.some((r) => r.HoraSalida)
-  if (entrada && salida) return 'asistio'
-  return entrada ? 'sin_salida' : 'sin_entrada'
-}
-
-/** Días laborales sin ningún registro (ni asistencia ni falta ya guardada) desde el ingreso de cada empleado hasta `hasta`. */
-export function planificarFaltas(
-  empleados: { id: number; Ingreso: string }[],
-  asistencias: Asistencia[],
-  hasta: string,
-): FaltaNueva[] {
-  const grupos = agruparPorEmpleadoYDia(asistencias)
-  return empleados.flatMap((empleado) =>
-    rangoDeFechas(empleado.Ingreso, hasta)
-      .filter((fecha) => esDiaLaboral(fecha) && !grupos.has(`${empleado.id}|${fecha}`))
-      .map((fecha) => ({ id_empleados: empleado.id, id_estado: ID_ESTADO_FALTA, Fecha: fecha })),
-  )
+  return grupos
 }

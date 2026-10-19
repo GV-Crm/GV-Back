@@ -21,10 +21,12 @@ export type DatosPersonales = {
   NSS: string | null
   Domicilio: string | null
   ContactosEmergencia: ContactoEmergencia[]
+  /** En pesos. Con él se calcula la prima vacacional. */
+  SalarioDiario: number | null
 }
 
 export const COLUMNAS_DATOS_PERSONALES =
-  'FechaNacimiento, Celular, Correo, CURP, RFC, NSS, Domicilio, ContactosEmergencia, ActualizadoEn, ActualizadoPor'
+  'FechaNacimiento, Celular, Correo, CURP, RFC, NSS, Domicilio, ContactosEmergencia, SalarioDiario, ActualizadoEn, ActualizadoPor'
 
 export const DATOS_VACIOS: DatosPersonales = {
   FechaNacimiento: null,
@@ -35,7 +37,10 @@ export const DATOS_VACIOS: DatosPersonales = {
   NSS: null,
   Domicilio: null,
   ContactosEmergencia: [],
+  SalarioDiario: null,
 }
+
+const MAX_SALARIO_DIARIO = 100_000
 
 const ESTADOS_CURP =
   'AS|BC|BS|CC|CL|CM|CS|CH|DF|DG|GT|GR|HG|JC|MC|MN|MS|NT|NL|OC|PL|QT|QR|SP|SL|SR|TC|TS|TL|VZ|YN|ZS|NE'
@@ -102,6 +107,13 @@ export function leerDatosPersonales(body: unknown): { datos: DatosPersonales } |
   const domicilio = texto(b.Domicilio) || null
   if (domicilio && domicilio.length > 300) return { error: 'El domicilio puede tener máximo 300 caracteres' }
 
+  // Acepta 350, "350.50" o "$1,200.00".
+  const salarioTexto = typeof b.SalarioDiario === 'number' ? String(b.SalarioDiario) : texto(b.SalarioDiario).replace(/[$,\s]/g, '')
+  const salario = salarioTexto ? Number(salarioTexto) : null
+  if (salario !== null && (!Number.isFinite(salario) || salario <= 0 || salario > MAX_SALARIO_DIARIO)) {
+    return { error: 'El salario diario debe ser un número mayor a 0' }
+  }
+
   const listaContactos = b.ContactosEmergencia ?? []
   if (!Array.isArray(listaContactos)) return { error: 'Los contactos de emergencia deben ser una lista' }
   if (listaContactos.length > MAX_CONTACTOS) return { error: `Máximo ${MAX_CONTACTOS} contactos de emergencia` }
@@ -129,6 +141,7 @@ export function leerDatosPersonales(body: unknown): { datos: DatosPersonales } |
       NSS: nss,
       Domicilio: domicilio,
       ContactosEmergencia: contactos,
+      SalarioDiario: salario === null ? null : Math.round(salario * 100) / 100,
     },
   }
 }
