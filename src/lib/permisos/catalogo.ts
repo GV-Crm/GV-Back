@@ -34,6 +34,12 @@ export const CATALOGO = [
   },
   {
     accion: 'gestionar',
+    recurso: 'DatosPersonales',
+    modulo: 'Trabajadores',
+    descripcion: 'Ver y editar los datos personales de los trabajadores (CURP, RFC, NSS, contacto, domicilio y contactos de emergencia)',
+  },
+  {
+    accion: 'gestionar',
     recurso: 'Permiso',
     modulo: 'Permisos',
     descripcion: 'Asignar roles a las cuentas y cambiar lo que puede hacer cada rol',
