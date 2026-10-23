@@ -28,3 +28,10 @@ export function motivoParaNoAsignarRol(
   if (!esAdmin && rolNuevo === ROL_ADMIN) return 'Solo el Admin puede asignar el rol Admin'
   return null
 }
+
+/** ¿Puede este usuario cambiar la contraseña de `cuenta`? (además necesita el permiso "cambiar Contrasena") */
+export function motivoParaNoCambiarContrasena(perfil: Perfil, cuenta: { Rol: string }): string | null {
+  // Si no, alguien con este permiso podría entrar como Admin.
+  if (cuenta.Rol === ROL_ADMIN && perfil.rol !== ROL_ADMIN) return 'Solo el Admin puede cambiar la contraseña de una cuenta Admin'
+  return null
+}

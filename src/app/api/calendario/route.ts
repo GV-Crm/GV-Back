@@ -11,9 +11,11 @@ import {
 } from '@/lib/asistencias/calendario'
 import { evaluarDia } from '@/lib/asistencias/jornada'
 import {
+  agruparPermisosPorEmpleadoYDia,
   agruparVacacionesPorEmpleado,
   cargarAsistencias,
   cargarMarcas,
+  cargarPermisosSalida,
   cargarVacaciones,
 } from '@/lib/asistencias/registros'
 
@@ -26,7 +28,8 @@ function errorRespuesta(mensaje: string, status: number) {
 /**
  * Estado de cada día (máx. 31) de los trabajadores, con las reglas de jornada.ts: entrada, salida,
  * retardo y horas extra. Toma en cuenta los registros de Asistencias y las marcas del checador.
- * Cada trabajador trae sus `totales` del rango (asistencias, retardos, faltas, vacaciones y minutos extra) y
+ * También los permisos de salida (la checada dentro de los 10 min de un permiso es su salida).
+ * Cada trabajador trae sus `totales` del rango (asistencias, retardos, faltas, vacaciones, permisos y minutos extra) y
  * sus periodos de `vacaciones` que tocan el rango pedido, aunque sean futuros (así se ven las programadas).
  * Los días futuros no se evalúan: un rango que empieza después de hoy regresa `dias` vacío.
  */
@@ -56,7 +59,7 @@ export async function GET(req: NextRequest) {
 
   let empleadosQuery = createAdminClient()
     .from('Empleados')
-    .select('id, Uuid, Nombre, Area, Ingreso, PinChecador')
+    .select('id, Uuid, Nombre, Area, Ingreso, Foto, PinChecador')
     .or(`Ingreso.is.null,Ingreso.lte.${hastaPedido}`)
     .order('Nombre')
   // Un empleado concreto se consulta aunque esté inactivo, para poder ver su historial.
@@ -67,17 +70,19 @@ export async function GET(req: NextRequest) {
   if (uuid && empleadosRes.data.length === 0) return NextResponse.json({ hoy: fechaHoy, desde, hasta, empleados: [] })
 
   const idEmpleado = uuid ? empleadosRes.data[0].id : undefined
-  const [asistencias, marcas, vacaciones] = await Promise.all([
+  const [asistencias, marcas, vacaciones, permisos] = await Promise.all([
     dias.length ? cargarAsistencias(desde, hasta, idEmpleado) : [],
     dias.length ? cargarMarcas(desde, hasta, empleadosRes.data.map((e) => e.PinChecador)) : [],
     cargarVacaciones(desde, hastaPedido, idEmpleado),
+    dias.length ? cargarPermisosSalida(desde, hasta, idEmpleado) : [],
   ])
   const registrosPorDia = agruparPorEmpleadoYDia(asistencias)
   const marcasPorDia = agruparMarcasPorPinYDia(marcas)
   const vacacionesPorEmpleado = agruparVacacionesPorEmpleado(vacaciones)
+  const permisosPorDia = agruparPermisosPorEmpleadoYDia(permisos)
 
   const empleados = empleadosRes.data.map((empleado) => {
-    const totales = { asistencias: 0, retardos: 0, faltas: 0, vacaciones: 0, minutosExtra: 0 }
+    const totales = { asistencias: 0, retardos: 0, faltas: 0, vacaciones: 0, permisos: 0, minutosExtra: 0 }
     const susVacaciones = vacacionesPorEmpleado.get(empleado.id) ?? []
     // Antes de su ingreso el empleado no podía asistir, así que esos días no se evalúan.
     const diasDelEmpleado = dias
@@ -85,8 +90,10 @@ export async function GET(req: NextRequest) {
       .map((fecha) => {
         const registros = registrosPorDia.get(`${empleado.id}|${fecha}`) ?? []
         const marcasDelDia = marcasPorDia.get(`${empleado.PinChecador}|${fecha}`) ?? []
-        const dia = evaluarDia(fecha, fechaHoy, registros, marcasDelDia, ahora, vacacionesDelDia(susVacaciones, fecha))
-        if (['asistio', 'retardo', 'sin_salida', 'sin_entrada'].includes(dia.estado)) totales.asistencias++
+        const permisosDelDia = permisosPorDia.get(`${empleado.id}|${fecha}`) ?? []
+        const dia = evaluarDia(fecha, fechaHoy, registros, marcasDelDia, ahora, vacacionesDelDia(susVacaciones, fecha), permisosDelDia)
+        if (['asistio', 'retardo', 'permiso', 'sin_salida', 'sin_entrada'].includes(dia.estado)) totales.asistencias++
+        if (dia.estado === 'permiso') totales.permisos++
         if (dia.retardo && dia.estado !== 'falta' && dia.estado !== 'justificada') totales.retardos++
         if (dia.estado === 'falta') totales.faltas++
         if (dia.estado === 'vacaciones') totales.vacaciones++

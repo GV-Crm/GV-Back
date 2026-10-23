@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest} from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { autorizar, sinPermiso } from '@/lib/supabase/auth'
 import { esFechaValida } from '@/lib/asistencias/calendario'
+import { areaDelCatalogo, limpiarNombreArea } from '@/lib/empleados/areas'
 import {
   DuplicadoError,
   guardarDatosPersonales,
@@ -46,14 +47,17 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null)
   const nombre = typeof body?.Nombre === 'string' ? body.Nombre.trim() : ''
-  const area = typeof body?.Area === 'string' ? body.Area.trim() : ''
   const ingreso = typeof body?.Ingreso === 'string' ? body.Ingreso : ''
 
   if (!nombre || nombre.length > 120) {
     return NextResponse.json({ error: 'El nombre es obligatorio (máximo 120 caracteres)' }, { status: 400 })
   }
-  if (!area || area.length > 60) {
-    return NextResponse.json({ error: 'El área es obligatoria (máximo 60 caracteres)' }, { status: 400 })
+  // El área tiene que existir en el catálogo; se guarda tal como está escrita ahí.
+  const areaElegida = limpiarNombreArea(body?.Area)
+  if (!areaElegida) return NextResponse.json({ error: 'Elige el área del trabajador' }, { status: 400 })
+  const area = (await areaDelCatalogo(areaElegida))?.Nombre
+  if (!area) {
+    return NextResponse.json({ error: `El área "${areaElegida}" no existe: agrégala primero en Áreas` }, { status: 400 })
   }
   if (!esFechaValida(ingreso)) {
     return NextResponse.json({ error: 'La fecha de ingreso debe tener formato YYYY-MM-DD' }, { status: 400 })

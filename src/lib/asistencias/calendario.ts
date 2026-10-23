@@ -8,6 +8,7 @@ export const ID_ESTADO_FALTA_JUSTIFICADA = 4
  * Las reglas del horario están en jornada.ts.
  * - asistio: tiene entrada y salida, y llegó a tiempo.
  * - retardo: tiene entrada y salida, pero llegó más de 15 min tarde.
+ * - permiso: salió antes de su hora con permiso (checó dentro de los 10 min que se le dieron).
  * - sin_salida / sin_entrada: solo se registró una de las dos (falta registrar la otra).
  * - falta: día laboral sin registros, o llegó más de 1 hora tarde.
  * - justificada: falta marcada como "Falta Justificada".
@@ -18,6 +19,7 @@ export const ID_ESTADO_FALTA_JUSTIFICADA = 4
 export type EstadoDia =
   | 'asistio'
   | 'retardo'
+  | 'permiso'
   | 'sin_salida'
   | 'sin_entrada'
   | 'falta'
@@ -57,6 +59,20 @@ export type PeriodoVacaciones = {
 /** La solicitud de vacaciones que incluye esa fecha, si hay. */
 export function vacacionesDelDia(periodos: PeriodoVacaciones[], fecha: string): PeriodoVacaciones | null {
   return periodos.find((p) => p.Fechas.includes(fecha)) ?? null
+}
+
+/**
+ * Permiso para salir antes (tabla PermisosSalida). Abre una ventana de `AutorizadoEn` a `VenceEn` (10 min):
+ * la checada que caiga ahí es su salida con permiso.
+ */
+export type PermisoSalida = {
+  id: number
+  id_empleados: number
+  Fecha: string
+  AutorizadoEn: string
+  VenceEn: string
+  Motivo: string | null
+  AutorizadoPor: string | null
 }
 
 /** Marca del checador (tabla MarcasChecador). El PIN es el PinChecador del trabajador. */

@@ -21,6 +21,12 @@ export const CATALOGO = [
     descripcion: 'Marcar o quitar faltas justificadas',
   },
   {
+    accion: 'autorizar',
+    recurso: 'Salida',
+    modulo: 'Asistencias',
+    descripcion: 'Dar permiso a un trabajador para salir antes de su hora (tiene 10 minutos para checar)',
+  },
+  {
     accion: 'gestionar',
     recurso: 'Vacaciones',
     modulo: 'Asistencias',
@@ -49,6 +55,12 @@ export const CATALOGO = [
     recurso: 'Permiso',
     modulo: 'Permisos',
     descripcion: 'Asignar roles a las cuentas y cambiar lo que puede hacer cada rol',
+  },
+  {
+    accion: 'cambiar',
+    recurso: 'Contrasena',
+    modulo: 'Permisos',
+    descripcion: 'Cambiar la contraseña de las cuentas (la de una cuenta Admin solo la cambia el Admin)',
   },
   {
     accion: 'gestionar',

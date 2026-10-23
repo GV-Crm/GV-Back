@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { autorizar } from '@/lib/supabase/auth'
-import { motivoParaNoAsignarRol } from '@/lib/permisos/limites'
+import { motivoParaNoAsignarRol, motivoParaNoCambiarContrasena } from '@/lib/permisos/limites'
 import { listarRoles } from '@/lib/permisos/roles'
 
 function errorRespuesta(mensaje: string, status: number) {
@@ -39,5 +39,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .single()
   if (error) return errorRespuesta(error.message, 500)
 
-  return NextResponse.json({ ...data, Correo: data.Correo.trim(), bloqueado: null })
+  return NextResponse.json({
+    ...data,
+    Correo: data.Correo.trim(),
+    bloqueado: null,
+    contrasenaBloqueada: acceso.ability.can('cambiar', 'Contrasena')
+      ? motivoParaNoCambiarContrasena(acceso.perfil, data)
+      : 'Tu rol no puede cambiar contraseñas',
+  })
 }

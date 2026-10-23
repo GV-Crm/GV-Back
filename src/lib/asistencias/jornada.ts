@@ -7,7 +7,11 @@ import {
   type Asistencia,
   type EstadoDia,
   type PeriodoVacaciones,
+  type PermisoSalida,
 } from './calendario'
+
+/** Minutos que tiene para checar su salida después de que se le da el permiso. */
+export const MINUTOS_PERMISO_SALIDA = 10
 
 /*
  * Reglas del horario de trabajo.
@@ -20,6 +24,8 @@ import {
  *     Desde esa checada y hasta su última checada del día corre el tiempo extra, en minutos exactos.
  *     Si ese día cuenta como falta, no genera horas extra.
  *   - Vacaciones: un día laboral dentro de un periodo de vacaciones y sin checadas no es falta.
+ *   - Permiso de salida: al autorizarlo se abren 10 min; la checada que haga en ese tiempo es su salida
+ *     y el día queda como "permiso" (salió antes con permiso).
  *
  * Las checadas del día salen de dos lados: los registros de Asistencias (entrada, comida y salida) y las
  * marcas del checador. Se ordenan por hora: la primera es la entrada y la última, la salida.
@@ -98,11 +104,26 @@ export type ResultadoDia = {
   minutosExtra: number
   /** Periodo de vacaciones que incluye este día (aunque haya checado), o null. */
   vacaciones: PeriodoVacaciones | null
+  /** Permiso de salida del día: el que usó, o el último que se le dio. null si no pidió. */
+  permisoSalida: PermisoDelDia | null
 }
+
+export type PermisoDelDia = {
+  id: number
+  autorizadoEn: string
+  venceEn: string
+  motivo: string | null
+  autorizadoPor: string | null
+  /** usado: checó dentro de la ventana · activo: todavía puede checar · vencido: pasaron los 10 min sin checar. */
+  situacion: 'usado' | 'activo' | 'vencido'
+}
+
+/** El checador y el servidor pueden tener el reloj un poco desfasado: se acepta la checada con este margen. */
+const MS_TOLERANCIA_RELOJ = 2 * 60_000
 
 /**
  * Evalúa un día de un trabajador. `ahora` sirve para el día de hoy: después de las 9:00 sin registros ya es falta.
- * `vacaciones` es el periodo de vacaciones que incluye el día, si hay.
+ * `vacaciones` es el periodo de vacaciones que incluye el día, si hay. `permisos` son sus permisos de salida del día.
  */
 export function evaluarDia(
   fecha: string,
@@ -111,6 +132,7 @@ export function evaluarDia(
   marcas: string[],
   ahora: Date = new Date(),
   vacaciones: PeriodoVacaciones | null = null,
+  permisos: PermisoSalida[] = [],
 ): ResultadoDia {
   const horario = horarioDelDia(fecha)
   const checadas = checadasDelDia(registros.filter((r) => !esFaltaRegistrada(r)), marcas)
@@ -125,6 +147,28 @@ export function evaluarDia(
     extra: null,
     minutosExtra: 0,
     vacaciones,
+    permisoSalida: null,
+  }
+
+  // Salida con permiso: la primera checada (que no sea la entrada) dentro de la ventana de algún permiso.
+  const conPermiso = permisos
+    .map((permiso) => {
+      const desde = Date.parse(permiso.AutorizadoEn) - MS_TOLERANCIA_RELOJ
+      const hasta = Date.parse(permiso.VenceEn) + MS_TOLERANCIA_RELOJ
+      return { permiso, indice: checadas.findIndex((c, i) => i >= 1 && c.ms >= desde && c.ms <= hasta) }
+    })
+    .find((p) => p.indice !== -1)
+  const ultimoPermiso = permisos.reduce<PermisoSalida | null>((u, p) => (!u || p.AutorizadoEn > u.AutorizadoEn ? p : u), null)
+  const permisoDelDia = conPermiso?.permiso ?? ultimoPermiso
+  if (permisoDelDia) {
+    resultado.permisoSalida = {
+      id: permisoDelDia.id,
+      autorizadoEn: permisoDelDia.AutorizadoEn,
+      venceEn: permisoDelDia.VenceEn,
+      motivo: permisoDelDia.Motivo,
+      autorizadoPor: permisoDelDia.AutorizadoPor,
+      situacion: conPermiso ? 'usado' : ahora.getTime() <= Date.parse(permisoDelDia.VenceEn) ? 'activo' : 'vencido',
+    }
   }
 
   if (checadas.length === 0) {
@@ -148,8 +192,9 @@ export function evaluarDia(
   resultado.entrada = entrada.hora
 
   // Tiempo extra: a partir de la 3.ª checada (entrada, salida y la que vuelve a checar), la primera después de la tolerancia.
-  let finJornada = checadas.length - 1
-  if (horario) {
+  // Si salió con permiso, esa checada es su salida y no hay tiempo extra.
+  let finJornada = conPermiso ? conPermiso.indice : checadas.length - 1
+  if (horario && !conPermiso) {
     const limite = horario.salida + MINUTOS_TOLERANCIA_EXTRA
     const inicioExtra = checadas.findIndex((c, i) => i >= 2 && minutosDelDia(c.hora) > limite)
     if (inicioExtra !== -1) {
@@ -178,6 +223,7 @@ export function evaluarDia(
   }
 
   if (justificada) resultado.estado = 'justificada'
+  else if (conPermiso) resultado.estado = 'permiso'
   else if (!resultado.salida) resultado.estado = 'sin_salida'
   else resultado.estado = resultado.retardo ? 'retardo' : 'asistio'
   return resultado

@@ -5,6 +5,7 @@ import {
   type Asistencia,
   type MarcaChecador,
   type PeriodoVacaciones,
+  type PermisoSalida,
 } from './calendario'
 
 const TAMANO_PAGINA = 1000
@@ -51,6 +52,38 @@ export function cargarVacaciones(desde: string, hasta: string, idEmpleado?: numb
 export function agruparVacacionesPorEmpleado(periodos: PeriodoVacaciones[]): Map<number, PeriodoVacaciones[]> {
   const grupos = new Map<number, PeriodoVacaciones[]>()
   for (const p of periodos) grupos.set(p.id_empleados, [...(grupos.get(p.id_empleados) ?? []), p])
+  return grupos
+}
+
+/** Permisos de salida del rango. `idEmpleado` limita a un trabajador. */
+export async function cargarPermisosSalida(desde: string, hasta: string, idEmpleado?: number): Promise<PermisoSalida[]> {
+  try {
+    return await todasLasFilas<PermisoSalida>((inicio, fin) => {
+      let consulta = createAdminClient()
+        .from('PermisosSalida')
+        .select('id, id_empleados, Fecha, AutorizadoEn, VenceEn, Motivo, AutorizadoPor')
+        .gte('Fecha', desde)
+        .lte('Fecha', hasta)
+      if (idEmpleado !== undefined) consulta = consulta.eq('id_empleados', idEmpleado)
+      return consulta.order('id').range(inicio, fin)
+    })
+  } catch (error) {
+    // Si todavía no se corre la migración 2026-10-22_permisos_salida.sql, el calendario funciona igual, sin permisos.
+    if (error instanceof Error && error.message.includes("'public.PermisosSalida'")) {
+      console.warn('Falta la tabla PermisosSalida: corre supabase/migraciones/2026-10-22_permisos_salida.sql')
+      return []
+    }
+    throw error
+  }
+}
+
+/** Permisos de salida agrupados por "idEmpleado|fecha". */
+export function agruparPermisosPorEmpleadoYDia(permisos: PermisoSalida[]): Map<string, PermisoSalida[]> {
+  const grupos = new Map<string, PermisoSalida[]>()
+  for (const p of permisos) {
+    const clave = `${p.id_empleados}|${p.Fecha}`
+    grupos.set(clave, [...(grupos.get(clave) ?? []), p])
+  }
   return grupos
 }
 
