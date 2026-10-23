@@ -23,7 +23,7 @@ const ESTADOS_JUSTIFICABLES: EstadoDia[] = ['falta', 'justificada', 'pendiente']
 
 /**
  * Marca (o desmarca) como "Falta Justificada" un día que cuenta como falta: sin registros, o con entrada
- * después de las 9:00 (ver jornada.ts).
+ * después de las 8:30 (ver jornada.ts).
  * Body: `{ uuid, fecha: 'YYYY-MM-DD', justificada: boolean, motivo?: string }`.
  * Para justificar, el motivo es obligatorio. Si la falta aún no estaba guardada, se crea.
  */

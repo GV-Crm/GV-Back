@@ -19,7 +19,7 @@ export const MINUTOS_PERMISO_SALIDA = 10
  *   Lunes a viernes: 8:00 a 18:00.   Sábado: 8:00 a 14:00.   Domingo: descanso.
  *
  *   - Retardo:   la entrada es después de las 8:15.
- *   - Falta:     la entrada es después de las 9:00 (aunque haya trabajado), o un día laboral sin registros.
+ *   - Falta:     la entrada es después de las 8:30 (aunque haya trabajado), o un día laboral sin registros.
  *   - Horas extra: el trabajador checa su salida y VUELVE A CHECAR después de las 18:10 (sábado 14:10).
  *     Desde esa checada y hasta su última checada del día corre el tiempo extra, en minutos exactos.
  *     Si ese día cuenta como falta, no genera horas extra.
@@ -36,7 +36,7 @@ const SALIDA_ENTRE_SEMANA = 18 * 60
 const SALIDA_SABADO = 14 * 60
 
 export const MINUTOS_TOLERANCIA_RETARDO = 15
-export const MINUTOS_PARA_FALTA = 60
+export const MINUTOS_PARA_FALTA = 30
 export const MINUTOS_TOLERANCIA_EXTRA = 10
 
 /** Dos checadas con menos de esto de diferencia cuentan como una (la persona checó dos veces seguidas). */
@@ -122,7 +122,7 @@ export type PermisoDelDia = {
 const MS_TOLERANCIA_RELOJ = 2 * 60_000
 
 /**
- * Evalúa un día de un trabajador. `ahora` sirve para el día de hoy: después de las 9:00 sin registros ya es falta.
+ * Evalúa un día de un trabajador. `ahora` sirve para el día de hoy: después de las 8:30 sin registros ya es falta.
  * `vacaciones` es el periodo de vacaciones que incluye el día, si hay. `permisos` son sus permisos de salida del día.
  */
 export function evaluarDia(
